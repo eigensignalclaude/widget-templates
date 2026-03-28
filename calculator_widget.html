@@ -1,0 +1,112 @@
+<div style="padding: 1rem 0; max-width: 420px; margin: 0 auto;">
+  <style>
+    #calc-row input[type=number] { width: 80px; text-align: center; font-size: 18px; -moz-appearance: textfield; }
+    #calc-row input::-webkit-outer-spin-button, #calc-row input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    #calc-row select { width: 52px; text-align: center; font-size: 18px; font-weight: 500; padding: 8px 4px; }
+  </style>
+
+  <div style="background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 1rem 1.25rem; margin-bottom: 16px;">
+    <p style="font-weight: 500; font-size: 18px; margin: 0 0 16px;">Calculator</p>
+    <div id="calc-row" style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px;">
+      <input type="number" id="inp-a" placeholder="A" />
+      <select id="inp-op">
+        <option value="+">+</option>
+        <option value="-">−</option>
+        <option value="*">×</option>
+        <option value="/">÷</option>
+      </select>
+      <input type="number" id="inp-b" placeholder="B" />
+      <button onclick="doCalculate()" style="font-weight: 500; padding: 8px 16px;">=</button>
+    </div>
+    <div id="result-display" style="text-align: center; font-size: 28px; font-weight: 500; color: #6366f1; padding: 8px 0; display: none;"></div>
+    <div id="history-section" style="border-top: 0.5px solid var(--color-border-tertiary); padding-top: 8px; margin-top: 8px; display: none;">
+      <p style="font-size: 12px; font-weight: 500; color: var(--color-text-secondary); margin: 0 0 4px;">History</p>
+      <div id="history-list" style="font-size: 12px; color: var(--color-text-tertiary);"></div>
+    </div>
+  </div>
+
+  <div style="background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 1rem 1.25rem; margin-bottom: 16px;">
+    <p style="font-size: 13px; color: var(--color-text-secondary); margin: 0 0 8px;">Ask Claude about the calculator</p>
+    <div style="display: flex; gap: 8px;">
+      <input type="text" id="claude-msg" placeholder="e.g. 'Make the result odd'…" style="flex: 1;" />
+      <button onclick="doSendToClaude()" style="white-space: nowrap;">Send to Claude ↗</button>
+    </div>
+  </div>
+
+  <details style="font-size: 12px;">
+    <summary style="color: var(--color-text-tertiary); cursor: pointer;">App state JSON</summary>
+    <pre id="state-json" style="font-family: var(--font-mono); font-size: 11px; color: var(--color-text-secondary); margin-top: 4px; white-space: pre-wrap;"></pre>
+  </details>
+</div>
+
+<script>
+var OP_DISPLAY = {"+":"+", "-":"−", "*":"×", "/":"÷"};
+var MAX_HISTORY = 10;
+
+// __BAKED_STATE_START__
+var BAKED_STATE = {"a":"","b":"","operator":"+","result":null,"history":[]};
+// __BAKED_STATE_END__
+
+var state = JSON.parse(JSON.stringify(BAKED_STATE));
+
+function render() {
+  document.getElementById('inp-a').value = state.a;
+  document.getElementById('inp-b').value = state.b;
+  document.getElementById('inp-op').value = state.operator;
+  var rd = document.getElementById('result-display');
+  if (state.result !== null) { rd.textContent = state.result; rd.style.display = 'block'; }
+  else { rd.style.display = 'none'; }
+  var hs = document.getElementById('history-section');
+  var hl = document.getElementById('history-list');
+  if (state.history.length > 0) {
+    hs.style.display = 'block';
+    hl.innerHTML = state.history.slice().reverse().map(function(h) {
+      return h.a + ' ' + (OP_DISPLAY[h.operator]||h.operator) + ' ' + h.b + ' = ' + (h.result !== null ? h.result : 'err');
+    }).join('<br>');
+  } else { hs.style.display = 'none'; }
+  document.getElementById('state-json').textContent = JSON.stringify(state, null, 2);
+}
+
+function readInputs() {
+  state.a = document.getElementById('inp-a').value;
+  state.b = document.getElementById('inp-b').value;
+  state.operator = document.getElementById('inp-op').value;
+}
+
+function compute(a, b, op) {
+  var va = parseFloat(a), vb = parseFloat(b);
+  if (isNaN(va) || isNaN(vb)) return null;
+  if (op === '+') return va + vb;
+  if (op === '-') return va - vb;
+  if (op === '*') return va * vb;
+  if (op === '/') return vb !== 0 ? va / vb : null;
+  return null;
+}
+
+function doCalculate() {
+  readInputs();
+  var res = compute(state.a, state.b, state.operator);
+  if (res === null) return;
+  state.result = res;
+  state.history = state.history.slice(-(MAX_HISTORY-1)).concat([{a:state.a, b:state.b, operator:state.operator, result:res}]);
+  render();
+}
+
+function doSendToClaude() {
+  readInputs();
+  var msg = document.getElementById('claude-msg').value.trim();
+  var payload = '[Calculator State]:\n```json\n' + JSON.stringify(state, null, 2) + '\n```\n\n' + (msg ? 'User: ' + msg : 'User: (just sending current state)');
+  if (typeof sendPrompt === 'function') {
+    sendPrompt(payload);
+    document.getElementById('claude-msg').value = '';
+  } else { alert('sendPrompt not available in this context.'); }
+}
+
+document.getElementById('inp-a').addEventListener('input', readInputs);
+document.getElementById('inp-b').addEventListener('input', readInputs);
+document.getElementById('inp-op').addEventListener('change', readInputs);
+document.getElementById('claude-msg').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSendToClaude(); }
+});
+render();
+</script>
